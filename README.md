@@ -4,6 +4,20 @@ A lightweight, browser-based tool to support live podcast hosting with automatic
 
 The setup controls now live behind a hamburger-style **Setup** drawer, so the main screen stays focused on transcript + live prompt output during broadcast.
 
+## No-key local mode (lightweight)
+
+You can run the app **without an OpenAI key**.
+
+When no key is provided, the app uses:
+
+- browser-native speech recognition for microphone transcription,
+- local heuristic generation for question/research output,
+- loaded URL context snippets for lightweight grounding.
+
+This keeps resource usage low and avoids running heavyweight local models.
+
+> Tradeoff: no-key mode transcribes microphone input only. Mixed system+mic transcription still requires an API-backed transcription path.
+
 ## Easiest way to run locally
 
 ### Option A (recommended): one command
@@ -11,12 +25,6 @@ The setup controls now live behind a hamburger-style **Setup** drawer, so the ma
 ```bash
 python3 launcher.py
 ```
-
-This will:
-
-- start the app server,
-- pick port `4173` if available (otherwise a free local port),
-- open your browser automatically.
 
 ### Option B: direct static server
 
@@ -28,8 +36,6 @@ Then open `http://localhost:4173`.
 
 ## Build a single executable
 
-You can package the launcher into a single binary using PyInstaller:
-
 ```bash
 ./build_executable.sh
 ```
@@ -39,50 +45,26 @@ Output binary:
 - `dist/livestream-copilot` (Linux/macOS)
 - `dist/livestream-copilot.exe` (Windows, when built on Windows)
 
-> Note: build on the same OS you plan to run on (PyInstaller is not cross-compile by default).
+> Note: build on the same OS you plan to run on.
 
-## New: URL context sources (up to 10)
+## URL context sources (up to 10)
 
-You can provide up to **10 URLs** (one per line) in the setup drawer.
+Provide up to **10 URLs** (one per line) in the setup drawer, then click **Load URL Context**.
 
-The app will:
-
-1. Fetch readable content for each URL.
-2. Build lightweight keyword context from those sources.
-3. Use that context to improve alternating outputs:
-   - sharper host questions,
-   - context/amplification notes,
-   - clarification prompts tied to your prep material.
-
-Use **Load URL Context** after pasting links.
+The app fetches readable content and uses it to enrich alternating host prompts.
 
 ## What you see while live
 
-- **Live Transcript** panel for the mixed stream transcript.
-- **Live Prompt Feed (Host View)** panel for only surfaced host-ready outputs.
+- **Live Transcript** panel.
+- **Live Prompt Feed (Host View)** panel.
 
-The prompt feed alternates automatically every ~2 minutes:
+Alternation every ~2 minutes:
 
 1. **Strategic Question**
 2. **Research Context**
 3. Repeat
 
-## Audio capture
-
-- Supports **local microphone audio** + **system/share audio**.
-- Captures both streams, mixes them in-browser, and transcribes chunks with OpenAI transcription.
-
-## Livestream flow
-
-1. Open app and add OpenAI API key.
-2. Paste up to 10 URLs and click **Load URL Context**.
-3. Keep both source checkboxes enabled (or choose one source).
-4. Click **Start Listening**.
-5. In browser share dialog, enable tab/window audio.
-6. Watch the alternating prompt feed for guidance.
-
 ## Notes
 
-- URL loading can fail for some pages depending on site protections.
-- If no source context matches yet, prompts still run from transcript context.
-- Simulation mode demonstrates the alternating flow quickly for UX checks.
+- URL loading can fail on sites with strict protections.
+- Simulation mode demonstrates the alternating flow quickly.

@@ -21,13 +21,7 @@ const useSystemAudioInput = document.getElementById('useSystemAudio');
 
 const AUTO_INTERVAL_MS = 120000;
 const MAX_SOURCES = 10;
-
-
-function setSetupDrawer(open) {
-  setupDrawerEl.classList.toggle('open', open);
-  setupDrawerEl.setAttribute('aria-hidden', open ? 'false' : 'true');
-  setupToggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-}
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 const state = {
   listening: false,
@@ -37,10 +31,17 @@ const state = {
   mixedStream: null,
   recorder: null,
   audioContext: null,
+  recognition: null,
   automationTimer: null,
   nextAutoAction: 'question',
   sourceDocs: [],
 };
+
+function setSetupDrawer(open) {
+  setupDrawerEl.classList.toggle('open', open);
+  setupDrawerEl.setAttribute('aria-hidden', open ? 'false' : 'true');
+  setupToggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
 
 function setStatus(text, isError = false) {
   statusEl.textContent = text;
@@ -71,8 +72,8 @@ function addLiveOutput(kind, text) {
 }
 
 function addTranscript(text, speaker = 'Live') {
-  const entry = { text, speaker, ts: Date.now() };
-  state.entries.push(entry);
+  if (!text.trim()) return;
+  state.entries.push({ text, speaker, ts: Date.now() });
   const line = document.createElement('p');
   line.className = 'transcript-line';
   line.innerHTML = `<strong>${speaker}:</strong> ${escapeHtml(text)}`;
@@ -91,7 +92,6 @@ function parseSourceUrls(rawText) {
     .map((u) => u.trim())
     .filter(Boolean)
     .map((u) => (u.match(/^https?:\/\//i) ? u : `https://${u}`));
-
   return [...new Set(urls)].slice(0, MAX_SOURCES);
 }
 
@@ -112,12 +112,9 @@ function stripMarkdown(text) {
 async function fetchSourceText(url) {
   const stripped = url.replace(/^https?:\/\//i, '');
   const proxyUrl = `https://r.jina.ai/http://${stripped}`;
-
   const res = await fetch(proxyUrl);
   if (!res.ok) throw new Error(`Unable to fetch (${res.status})`);
-
-  const text = await res.text();
-  const clean = stripMarkdown(text).slice(0, 12000);
+  const clean = stripMarkdown(await res.text()).slice(0, 12000);
   if (!clean) throw new Error('No readable content found');
   return clean;
 }
@@ -132,143 +129,92 @@ async function loadSourceContext() {
 
   setSourcesStatus('Loading URL context…');
   const loaded = [];
-
   for (const url of urls) {
     try {
       const text = await fetchSourceText(url);
-      loaded.push({
-        url,
-        text,
-        keywords: extractKeywords(text),
-      });
+      loaded.push({ url, text, keywords: extractKeywords(text) });
     } catch {
       // skip failed source
     }
   }
 
   state.sourceDocs = loaded;
-  if (!loaded.length) {
-    setSourcesStatus('Could not load any URLs (check URL format or content access).', true);
-    return;
-  }
-
+  if (!loaded.length) return setSourcesStatus('Could not load any URLs (check URL format or site access).', true);
   setSourcesStatus(`Loaded ${loaded.length}/${urls.length} URLs for context`);
 }
 
 function getSourceContextSnippet(windowText) {
   if (!state.sourceDocs.length) return '';
-
   const windowKeywords = extractKeywords(windowText);
-  const scored = state.sourceDocs
-    .map((doc) => {
-      const overlap = doc.keywords.filter((k) => windowKeywords.includes(k)).length;
-      return { doc, overlap };
-    })
+  return state.sourceDocs
+    .map((doc) => ({ doc, overlap: doc.keywords.filter((k) => windowKeywords.includes(k)).length }))
     .sort((a, b) => b.overlap - a.overlap)
     .slice(0, 2)
-    .map(({ doc, overlap }) => {
-      const summary = doc.text.slice(0, 400);
-      return `Source (${overlap} overlap): ${doc.url}\n${summary}`;
-    });
-
-  return scored.join('\n\n');
+    .map(({ doc, overlap }) => `Source (${overlap} overlap): ${doc.url}\n${doc.text.slice(0, 280)}`)
+    .join('\n\n');
 }
 
 async function callOpenAI(systemPrompt, userPrompt) {
   const apiKey = apiKeyInput.value.trim();
   if (!apiKey) return null;
-
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       temperature: 0.7,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
+      messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
     }),
   });
-
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`OpenAI request failed (${res.status}): ${detail.slice(0, 200)}`);
-  }
-
+  if (!res.ok) throw new Error(`OpenAI request failed (${res.status})`);
   const data = await res.json();
   return data.choices?.[0]?.message?.content?.trim() || null;
 }
 
-async function transcribeChunk(audioBlob) {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) return null;
-
-  const form = new FormData();
-  form.append('model', 'whisper-1');
-  form.append('language', 'en');
-  form.append('response_format', 'json');
-  form.append('file', audioBlob, `mixed-${Date.now()}.webm`);
-
-  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
-  });
-
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`Transcription failed (${res.status}): ${detail.slice(0, 200)}`);
-  }
-
-  const data = await res.json();
-  return data.text?.trim() || null;
+function localQuestionFallback(windowText, sourceContext) {
+  const last = windowText.split(/[\n.?!]/).map((s) => s.trim()).filter(Boolean).at(-1) || 'that point';
+  const keywords = extractKeywords(windowText).slice(0, 2).join(' / ');
+  const sourceTag = sourceContext ? ' Compare it against the loaded source material.' : '';
+  return `What assumption sits inside "${last.slice(0, 90)}"${keywords ? ` regarding ${keywords}` : ''}, and what evidence would change your mind?${sourceTag}`;
 }
 
-function fallbackQuestion(windowText, sourceHint = '') {
-  const lastSentence = windowText.split(/[\n.?!]/).map((s) => s.trim()).filter(Boolean).at(-1) || 'that point';
-  const sourcePrompt = sourceHint ? ' How does that compare to the source material you loaded?' : '';
-  return `What assumption is hiding inside "${lastSentence.slice(0, 80)}", and what evidence would change your mind?${sourcePrompt}`;
+function localResearchFallback(windowText, sourceContext) {
+  const keywords = extractKeywords(windowText);
+  if (sourceContext) {
+    return `Source-backed angle: ${sourceContext.slice(0, 230)}...`;
+  }
+  return `Context angle: clarify the claim around ${keywords[0] || 'the current topic'}, request a concrete example, and ask what trade-off is being ignored.`;
 }
 
 async function generateStrategistQuestion(reason = 'automation') {
   const windowText = getRollingWindow(60);
   if (!windowText) return;
-
   const sourceContext = getSourceContextSnippet(windowText);
-  const systemPrompt = 'You are an expert podcast co-host. Create one concise, provocative follow-up question. If source context is provided, use it to sharpen clarity or challenge assumptions. Return only one question.';
-  const userPrompt = `Reason: ${reason}\nTopic hint: ${topicHintInput.value.trim() || 'none'}\nTranscript:\n${windowText}\n\nOptional source context:\n${sourceContext || 'none'}`;
 
   try {
-    const aiQuestion = await callOpenAI(systemPrompt, userPrompt);
-    addLiveOutput('question', aiQuestion || fallbackQuestion(windowText, sourceContext));
-  } catch (err) {
-    addLiveOutput('question', `${fallbackQuestion(windowText, sourceContext)} (fallback: ${err.message})`);
+    const ai = await callOpenAI(
+      'You are an expert podcast co-host. Return one concise provocative follow-up question only. Use source context if present.',
+      `Reason: ${reason}\nTopic hint: ${topicHintInput.value.trim() || 'none'}\nTranscript:\n${windowText}\n\nSource context:\n${sourceContext || 'none'}`,
+    );
+    addLiveOutput('question', ai || localQuestionFallback(windowText, sourceContext));
+  } catch {
+    addLiveOutput('question', localQuestionFallback(windowText, sourceContext));
   }
 }
 
 async function conductResearch(reason = 'automation') {
   const windowText = getRollingWindow(90);
   if (!windowText) return;
-
   const sourceContext = getSourceContextSnippet(windowText);
-  const concepts = extractKeywords(windowText);
-
-  const fallback = sourceContext
-    ? `Source-backed angle: ${sourceContext.slice(0, 260)}...`
-    : `No source match yet. Focus angle: ${concepts[0] || 'current claim'} and ask for concrete evidence.`;
 
   try {
     const ai = await callOpenAI(
-      'You are a human factors research assistant. Give one short, concrete context note for live discussion. Prioritize loaded sources when relevant and explain why it matters.',
-      `Reason: ${reason}\nConcepts: ${concepts.join(', ') || 'none'}\nTranscript:\n${windowText}\n\nOptional source context:\n${sourceContext || 'none'}`,
+      'You are a human factors assistant. Return one short context note with practical relevance. Use source context when available.',
+      `Reason: ${reason}\nTranscript:\n${windowText}\n\nSource context:\n${sourceContext || 'none'}`,
     );
-    addLiveOutput('research', ai || fallback);
+    addLiveOutput('research', ai || localResearchFallback(windowText, sourceContext));
   } catch {
-    addLiveOutput('research', fallback);
+    addLiveOutput('research', localResearchFallback(windowText, sourceContext));
   }
 }
 
@@ -293,10 +239,65 @@ function stopAutomationScheduler() {
   state.automationTimer = null;
 }
 
+async function transcribeChunkOpenAI(audioBlob) {
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey) return null;
+  const form = new FormData();
+  form.append('model', 'whisper-1');
+  form.append('language', 'en');
+  form.append('response_format', 'json');
+  form.append('file', audioBlob, `mixed-${Date.now()}.webm`);
+
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Transcription failed (${res.status})`);
+  const data = await res.json();
+  return data.text?.trim() || null;
+}
+
+function stopTracks(stream) {
+  if (!stream) return;
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+function startBrowserSpeechRecognition() {
+  if (!SpeechRecognition) {
+    setStatus('No OpenAI key and browser speech recognition unavailable. Use Chrome/Edge or add an API key.', true);
+    return false;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onresult = (event) => {
+    let finalText = '';
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      if (event.results[i].isFinal) finalText += `${event.results[i][0].transcript.trim()} `;
+    }
+    if (finalText.trim()) addTranscript(finalText.trim(), 'Mic (Local)');
+  };
+
+  recognition.onerror = () => setStatus('Local speech recognition encountered an issue. Retrying…', true);
+  recognition.onend = () => {
+    if (state.listening && state.recognition) {
+      try { state.recognition.start(); } catch { /* no-op */ }
+    }
+  };
+
+  state.recognition = recognition;
+  recognition.start();
+  setStatus('Listening (local lightweight mode, no API key)…');
+  return true;
+}
+
 async function requestInputStreams() {
   const useMic = useMicInput.checked;
   const useSystem = useSystemAudioInput.checked;
-
   if (!useMic && !useSystem) throw new Error('Enable at least one audio source (microphone or system audio).');
 
   let micStream = null;
@@ -311,12 +312,10 @@ async function requestInputStreams() {
 
   if (useSystem) {
     systemStream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
-
     if (!systemStream.getAudioTracks().length) {
       systemStream.getTracks().forEach((t) => t.stop());
-      throw new Error('System audio was not shared. Re-try and enable tab/window audio in the share dialog.');
+      throw new Error('System audio was not shared. Re-try and enable tab/window audio in share dialog.');
     }
-
     systemStream.getVideoTracks().forEach((track) => {
       track.onended = () => stopListening();
     });
@@ -328,38 +327,46 @@ async function requestInputStreams() {
 function mixAudioStreams(streams) {
   const audioContext = new AudioContext();
   const destination = audioContext.createMediaStreamDestination();
-
   streams.filter(Boolean).forEach((stream) => {
     const source = audioContext.createMediaStreamSource(stream);
     source.connect(destination);
   });
-
   return { mixedStream: destination.stream, audioContext };
 }
 
 async function startListening() {
-  if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.getDisplayMedia) {
-    setStatus('This browser does not support required media capture APIs.', true);
+  if (sourceUrlsInput.value.trim() && !state.sourceDocs.length) await loadSourceContext();
+
+  state.listening = true;
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  startAutomationScheduler();
+  await runAlternatingAutomation();
+
+  const hasApiKey = Boolean(apiKeyInput.value.trim());
+
+  if (!hasApiKey) {
+    const ok = startBrowserSpeechRecognition();
+    if (!ok) {
+      stopListening();
+      return;
+    }
+    if (useSystemAudioInput.checked) {
+      addLiveOutput('research', 'Note: no-key local mode transcribes microphone only (lightweight). Add API key for mixed system+mic transcription.');
+    }
     return;
   }
-  if (!window.MediaRecorder) {
-    setStatus('MediaRecorder API unavailable. Use modern Chrome/Edge.', true);
-    return;
-  }
-  if (!apiKeyInput.value.trim()) {
-    setStatus('OpenAI API key required for dual-source transcription.', true);
+
+  if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.getDisplayMedia || !window.MediaRecorder) {
+    setStatus('Media capture APIs unavailable. Falling back to local mic transcription mode.');
+    startBrowserSpeechRecognition();
     return;
   }
 
   try {
-    if (sourceUrlsInput.value.trim() && !state.sourceDocs.length) {
-      await loadSourceContext();
-    }
-
     setStatus('Requesting microphone/system audio permissions…');
     const { micStream, systemStream } = await requestInputStreams();
     const { mixedStream, audioContext } = mixAudioStreams([micStream, systemStream]);
-
     state.micStream = micStream;
     state.systemStream = systemStream;
     state.mixedStream = mixedStream;
@@ -371,33 +378,19 @@ async function startListening() {
     recorder.ondataavailable = async (event) => {
       if (!event.data || event.data.size < 1200) return;
       try {
-        const text = await transcribeChunk(event.data);
+        const text = await transcribeChunkOpenAI(event.data);
         if (text) addTranscript(text, 'Live Mix');
-      } catch (err) {
-        addLiveOutput('research', `Transcription issue: ${err.message}`);
+      } catch {
+        addLiveOutput('research', 'Transcription issue detected; continuing with current context.');
       }
     };
 
-    recorder.onstart = async () => {
-      state.listening = true;
-      setStatus('Listening live… alternating outputs every ~2 minutes');
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      startAutomationScheduler();
-      await runAlternatingAutomation();
-    };
-
-    recorder.onstop = () => setStatus('Stopped');
+    recorder.onstart = () => setStatus('Listening live with mixed audio (OpenAI transcription)…');
     recorder.start(8000);
   } catch (err) {
-    setStatus(`Unable to start: ${err.message}`, true);
-    stopListening();
+    setStatus(`Mixed-audio capture failed: ${err.message}. Falling back to local mode.`, true);
+    startBrowserSpeechRecognition();
   }
-}
-
-function stopTracks(stream) {
-  if (!stream) return;
-  stream.getTracks().forEach((track) => track.stop());
 }
 
 function stopListening() {
@@ -405,14 +398,17 @@ function stopListening() {
   stopAutomationScheduler();
 
   if (state.recorder && state.recorder.state !== 'inactive') state.recorder.stop();
+  if (state.recognition) {
+    try { state.recognition.stop(); } catch { /* no-op */ }
+  }
 
   stopTracks(state.micStream);
   stopTracks(state.systemStream);
   stopTracks(state.mixedStream);
-
   if (state.audioContext && state.audioContext.state !== 'closed') state.audioContext.close();
 
   state.recorder = null;
+  state.recognition = null;
   state.micStream = null;
   state.systemStream = null;
   state.mixedStream = null;
