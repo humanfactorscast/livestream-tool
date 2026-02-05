@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Livestream Copilot</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="header-row">
+        <div>
+          <h1>Livestream Copilot Sidecar</h1>
+          <p>Real-time podcast assistant with automated alternating host prompts every ~2 minutes.</p>
+        </div>
+        <button id="setupToggle" class="icon-btn" aria-expanded="false" aria-controls="setupDrawer" title="Open setup menu">☰ Setup</button>
+      </div>
+    </header>
+
+    <aside id="setupDrawer" class="setup-drawer" aria-hidden="true">
+      <section class="controls card">
+        <div class="setup-title-row">
+          <h2>Broadcast Controls</h2>
+          <button id="closeSetupBtn" class="ghost">Close</button>
+        </div>
+
+        <div class="row">
+          <label for="apiKey">OpenAI API Key</label>
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+          <small>Required for live transcription from mixed audio.</small>
+        </div>
+        <div class="row">
+          <label for="topicHint">Episode topic hint</label>
+          <input id="topicHint" type="text" placeholder="e.g. remote work, AI safety, creator economy" />
+        </div>
+
+        <div class="row">
+          <label for="sourceUrls">Context URLs (up to 10, one per line)</label>
+          <textarea id="sourceUrls" rows="6" placeholder="https://example.com/article-1&#10;https://example.com/article-2"></textarea>
+          <div class="actions compact">
+            <button id="loadSourcesBtn" class="ghost">Load URL Context</button>
+            <small id="sourcesStatus">No sources loaded</small>
+          </div>
+        </div>
+
+        <div class="row check-row">
+          <label><input id="useMic" type="checkbox" checked /> Include local microphone</label>
+          <label><input id="useSystemAudio" type="checkbox" checked /> Include system/share audio</label>
+        </div>
+        <div class="actions">
+          <button id="startBtn">Start Listening</button>
+          <button id="stopBtn" disabled>Stop</button>
+          <button id="simulateBtn">Start Broadcast Simulation</button>
+          <button id="clearBtn" class="ghost">Clear Session</button>
+        </div>
+        <p id="status" class="status">Idle</p>
+        <small>
+          During livestreaming, prompts alternate automatically every ~2 minutes between a strategic question and a research context insight.
+        </small>
+      </section>
+    </aside>
+
+    <main>
+      <section class="layout-grid">
+        <article class="card" id="transcriptPanel">
+          <h2>Live Transcript</h2>
+          <div id="transcript" class="scroll"></div>
+        </article>
+
+        <article class="card" id="liveOutputPanel">
+          <h2>Live Prompt Feed (Host View)</h2>
+          <p class="subtitle">Alternates every ~2 minutes: Question → Research → Question…</p>
+          <ul id="liveOutput" class="stack"></ul>
+        </article>
+      </section>
+    </main>
+
+    <template id="itemTemplate">
+      <li>
+        <time></time>
+        <p></p>
+      </li>
+    </template>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
