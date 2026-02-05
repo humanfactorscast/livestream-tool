@@ -17,6 +17,7 @@ When no key is provided, the app uses:
 This keeps resource usage low and avoids running heavyweight local models.
 
 > Tradeoff: no-key mode transcribes microphone input only. Mixed system+mic transcription still requires an API-backed transcription path.
+> In mixed-audio mode, shared system audio is also routed back to local output so you can still hear it while streaming.
 
 ## Easiest way to run locally
 

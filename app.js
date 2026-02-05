@@ -32,6 +32,7 @@ const state = {
   recorder: null,
   audioContext: null,
   recognition: null,
+  systemMonitorGain: null,
   automationTimer: null,
   nextAutoAction: 'question',
   sourceDocs: [],
@@ -324,14 +325,28 @@ async function requestInputStreams() {
   return { micStream, systemStream };
 }
 
-function mixAudioStreams(streams) {
+function mixAudioStreams({ micStream, systemStream }) {
   const audioContext = new AudioContext();
   const destination = audioContext.createMediaStreamDestination();
-  streams.filter(Boolean).forEach((stream) => {
-    const source = audioContext.createMediaStreamSource(stream);
-    source.connect(destination);
-  });
-  return { mixedStream: destination.stream, audioContext };
+
+  if (micStream) {
+    const micSource = audioContext.createMediaStreamSource(micStream);
+    micSource.connect(destination);
+  }
+
+  let systemMonitorGain = null;
+  if (systemStream) {
+    const systemSource = audioContext.createMediaStreamSource(systemStream);
+    systemSource.connect(destination);
+
+    // Keep shared system audio audible locally while also capturing it.
+    systemMonitorGain = audioContext.createGain();
+    systemMonitorGain.gain.value = 1.0;
+    systemSource.connect(systemMonitorGain);
+    systemMonitorGain.connect(audioContext.destination);
+  }
+
+  return { mixedStream: destination.stream, audioContext, systemMonitorGain };
 }
 
 async function startListening() {
@@ -366,11 +381,12 @@ async function startListening() {
   try {
     setStatus('Requesting microphone/system audio permissions…');
     const { micStream, systemStream } = await requestInputStreams();
-    const { mixedStream, audioContext } = mixAudioStreams([micStream, systemStream]);
+    const { mixedStream, audioContext, systemMonitorGain } = mixAudioStreams({ micStream, systemStream });
     state.micStream = micStream;
     state.systemStream = systemStream;
     state.mixedStream = mixedStream;
     state.audioContext = audioContext;
+    state.systemMonitorGain = systemMonitorGain;
 
     const recorder = new MediaRecorder(mixedStream, { mimeType: 'audio/webm;codecs=opus' });
     state.recorder = recorder;
@@ -405,6 +421,9 @@ function stopListening() {
   stopTracks(state.micStream);
   stopTracks(state.systemStream);
   stopTracks(state.mixedStream);
+  if (state.systemMonitorGain) {
+    try { state.systemMonitorGain.disconnect(); } catch { /* no-op */ }
+  }
   if (state.audioContext && state.audioContext.state !== 'closed') state.audioContext.close();
 
   state.recorder = null;
@@ -413,6 +432,7 @@ function stopListening() {
   state.systemStream = null;
   state.mixedStream = null;
   state.audioContext = null;
+  state.systemMonitorGain = null;
 
   startBtn.disabled = false;
   stopBtn.disabled = true;
