@@ -173,10 +173,22 @@ async function callOpenAI(systemPrompt, userPrompt) {
 }
 
 function localQuestionFallback(windowText, sourceContext) {
-  const last = windowText.split(/[\n.?!]/).map((s) => s.trim()).filter(Boolean).at(-1) || 'that point';
-  const keywords = extractKeywords(windowText).slice(0, 2).join(' / ');
-  const sourceTag = sourceContext ? ' Compare it against the loaded source material.' : '';
-  return `What assumption sits inside "${last.slice(0, 90)}"${keywords ? ` regarding ${keywords}` : ''}, and what evidence would change your mind?${sourceTag}`;
+  const lines = windowText.split('\n').map((s) => s.trim()).filter(Boolean);
+  const lastLine = lines.at(-1) || 'the latest claim';
+  const topic = extractKeywords(windowText)[0] || 'this claim';
+
+  const templates = [
+    `What would make this position on ${topic} collapse in front of the audience, and are you willing to name that threshold now?`,
+    `Who is harmed if your ${topic} take is wrong, and what trade-off are you currently underweighting?`,
+    `If we force a binary choice on ${topic} right now, which side do you pick and what uncomfortable cost comes with it?`,
+  ];
+
+  const chosen = templates[Math.floor(Math.random() * templates.length)];
+  const sourceTag = sourceContext
+    ? ' Challenge or validate your answer against one loaded source in the next response.'
+    : '';
+
+  return `${chosen} (Anchor: "${lastLine.slice(0, 80)}")${sourceTag}`;
 }
 
 function localResearchFallback(windowText, sourceContext) {
@@ -194,8 +206,8 @@ async function generateStrategistQuestion(reason = 'automation') {
 
   try {
     const ai = await callOpenAI(
-      'You are an expert podcast co-host. Return one concise provocative follow-up question only. Use source context if present.',
-      `Reason: ${reason}\nTopic hint: ${topicHintInput.value.trim() || 'none'}\nTranscript:\n${windowText}\n\nSource context:\n${sourceContext || 'none'}`,
+      'You are a sharp podcast producer. Generate exactly ONE host question that is engaging, high-stakes, specific, and useful. Prefer tension, trade-offs, contradictions, accountability, or testable claims. Avoid generic prompts, politeness fluff, and broad openers like "tell me more". The question must be natural to ask live and should create discussion heat without being abusive. If source context exists, use it to challenge or validate a claim.',
+      `Reason: ${reason}\nTopic hint: ${topicHintInput.value.trim() || 'none'}\nTranscript:\n${windowText}\n\nSource context:\n${sourceContext || 'none'}\n\nReturn only the question text.`,
     );
     addLiveOutput('question', ai || localQuestionFallback(windowText, sourceContext));
   } catch {

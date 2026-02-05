@@ -65,6 +65,8 @@ Alternation every ~2 minutes:
 2. **Research Context**
 3. Repeat
 
+- Questions are tuned to be engaging, high-stakes, and debate-driving (trade-offs, contradictions, accountability), instead of generic prompts.
+
 ## Notes
 
 - URL loading can fail on sites with strict protections.
