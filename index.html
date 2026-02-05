@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Livestream Copilot</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Livestream Copilot Sidecar</h1>
+      <p>Real-time podcast assistant with Strategist, Researcher, and Scribe agents.</p>
+    </header>
+
+    <main>
+      <section class="controls card">
+        <h2>Broadcast Controls</h2>
+        <div class="row">
+          <label for="apiKey">OpenAI API Key (optional)</label>
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+        </div>
+        <div class="row">
+          <label for="topicHint">Episode topic hint</label>
+          <input id="topicHint" type="text" placeholder="e.g. remote work, AI safety, creator economy" />
+        </div>
+        <div class="actions">
+          <button id="startBtn">Start Listening</button>
+          <button id="stopBtn" disabled>Stop</button>
+          <button id="simulateBtn">Start Broadcast Simulation</button>
+          <button id="clearBtn" class="ghost">Clear Session</button>
+        </div>
+        <p id="status" class="status">Idle</p>
+        <small>
+          Tip: Keep this panel open while streaming. The tool listens through your selected microphone and surfaces suggestions.
+        </small>
+      </section>
+
+      <section class="layout-grid">
+        <article class="card" id="transcriptPanel">
+          <h2>Live Transcript</h2>
+          <div id="transcript" class="scroll"></div>
+        </article>
+
+        <article class="card" id="strategistPanel">
+          <h2>Agent 1 · Strategist (Whisperer)</h2>
+          <p class="subtitle">Questions for host to ask naturally</p>
+          <button id="manualQuestion">Generate Question Now</button>
+          <ul id="questions" class="stack"></ul>
+        </article>
+
+        <article class="card" id="researchPanel">
+          <h2>Agent 2 · Researcher (Human Factors)</h2>
+          <p class="subtitle">Behavioral + psychological context</p>
+          <button id="manualResearch">Research Current Context</button>
+          <ul id="research" class="stack"></ul>
+        </article>
+
+        <article class="card" id="scribePanel">
+          <h2>Agent 3 · Scribe</h2>
+          <p class="subtitle">Entities, references, and anchor points</p>
+          <ul id="entities" class="stack"></ul>
+        </article>
+      </section>
+    </main>
+
+    <template id="itemTemplate">
+      <li>
+        <time></time>
+        <p></p>
+      </li>
+    </template>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
