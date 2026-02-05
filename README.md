@@ -4,9 +4,46 @@ A lightweight, browser-based tool to support live podcast hosting with automatic
 
 The setup controls now live behind a hamburger-style **Setup** drawer, so the main screen stays focused on transcript + live prompt output during broadcast.
 
+## Easiest way to run locally
+
+### Option A (recommended): one command
+
+```bash
+python3 launcher.py
+```
+
+This will:
+
+- start the app server,
+- pick port `4173` if available (otherwise a free local port),
+- open your browser automatically.
+
+### Option B: direct static server
+
+```bash
+python3 -m http.server 4173
+```
+
+Then open `http://localhost:4173`.
+
+## Build a single executable
+
+You can package the launcher into a single binary using PyInstaller:
+
+```bash
+./build_executable.sh
+```
+
+Output binary:
+
+- `dist/livestream-copilot` (Linux/macOS)
+- `dist/livestream-copilot.exe` (Windows, when built on Windows)
+
+> Note: build on the same OS you plan to run on (PyInstaller is not cross-compile by default).
+
 ## New: URL context sources (up to 10)
 
-You can now provide up to **10 URLs** (one per line) in the dashboard.
+You can provide up to **10 URLs** (one per line) in the setup drawer.
 
 The app will:
 
@@ -34,16 +71,6 @@ The prompt feed alternates automatically every ~2 minutes:
 
 - Supports **local microphone audio** + **system/share audio**.
 - Captures both streams, mixes them in-browser, and transcribes chunks with OpenAI transcription.
-
-## Quick start
-
-```bash
-python3 -m http.server 4173
-```
-
-Then open: `http://localhost:4173`
-
-> Best experience: Chrome or Edge.
 
 ## Livestream flow
 
